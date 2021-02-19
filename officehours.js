@@ -15,7 +15,26 @@ const {
 const queue = [];
 const dequeued = [];
 const onlineTas = {};
+const hiddenTas = {};
 let offlineCommands = false;
+
+function readyHelper(message, listAtAuthorId, queueMessage) {
+
+  // console.log("list length: ", list.length);
+  // for(let i = 0; i < list.length; i+=1) {
+  //   console.log(list[i], " with message ", list[i].message);
+  // }
+
+  if (listAtAuthorId.last_ready_msg !== undefined) {
+    listAtAuthorId.last_ready_msg.delete();
+    
+  }
+  queueMessage.reply(`${getNickname(message)} is ready for you. Move to their office.`)
+    .then((reply) => {
+    listAtAuthorId.last_ready_msg = reply;
+  });
+  listAtAuthorId.last_helped_time = new Date();
+}
 
 function getNickname(message) {
   const member = message.guild.member(message.author);
@@ -35,7 +54,9 @@ function index(member) {
 }
 
 const isOnline = (member) => member.id in onlineTas;
+const isHidden = (member) => member.id in hiddenTas;
 const contains = (member) => index(member) !== -1;
+
 
 exports.cmds = {
 
@@ -318,22 +339,21 @@ exports.cmds = {
     const authorId = message.author.id;
     const msg = queue[readyIndex].message;
 
-    if (onlineTas[authorId].last_ready_msg !== undefined) {
-      onlineTas[authorId].last_ready_msg.delete();
+    if(isOnline(message.author)) {
+      readyHelper(message, onlineTas[authorId], msg);
+    } else if (isHidden(message.author)) {
+      readyHelper(message, hiddenTas[authorId], msg);
+    } else {
+      message.reply("An error occured trying to ready a student due to an invalid online/offline state. Please try again.");
+      message.react(NAK);
+      return;
     }
-
-    msg.reply(`${getNickname(message)} is ready for you. Move to their office.`)
-      .then((reply) => {
-        onlineTas[authorId].last_ready_msg = reply;
-      });
 
     msg.delete();
     message.reply(`${getNickname(msg)} is next. There are ${queue.length - 1} people left in the queue.`);
 
     dequeued.push(queue[readyIndex]);
     queue.splice(readyIndex, 1);
-
-    onlineTas[authorId].last_helped_time = new Date();
 
     message.react(ACK);
     message.delete({
@@ -372,9 +392,9 @@ exports.cmds = {
    *
    * @param {Object} message - The discord messsage object to interact with.
    */
-  '!offline': (message) => {
+  '!offline': (message, args) => {
     if (TA_CHANNEL === message.channel.id) {
-      if (!isOnline(message.author)) {
+      if (!isOnline(message.author) && !isHidden(message.author)) {
         message.react(NAK);
         message.reply('You are already offline.')
           .then((msg) => {
@@ -385,15 +405,31 @@ exports.cmds = {
         return;
       }
 
-      if(offlineCommands) {
-        message.reply("You are now marked as offline, but you are still able to use certain commands offline.");
-      } else {
-        delete onlineTas[message.author.id];
-        message.reply("You are now marked as offline. No commands will work as offline commands are not enabled.");
+      if (args.length === 0) {
+        message.reply("Please add a valid argument (partial, full) to set your offline status.");
+        message.react(NAK);
+        return;
       }
-      
-      message.guild.channels.cache.get(OFFICE_HOURS).send(`${message.author} is now offline. :x:`);
-      message.react(ACK);
+
+      if(args[0] === 'partial') {
+        offlineCommands = true;
+        hiddenTas[message.author.id] = {}; // Moves TA to hidden
+        message.reply("You are now marked as offline, but you are still able to use certain commands offline.");
+      } else if(args[0] === 'full') {
+        offlineCommands = false;
+        message.reply("You are now marked as offline. No commands will work as offline commands are not enabled.");
+      } else {
+        message.reply("The offline setting could not be set due to an invalid argument.");
+        message.react(NAK);
+        return;
+      }
+
+      delete onlineTas[message.author.id];
+
+      if(!isHidden(message.author)){
+        message.guild.channels.cache.get(OFFICE_HOURS).send(`${message.author} is now offline. :x:`);
+        message.react(ACK);
+      }
     }
   },
 
