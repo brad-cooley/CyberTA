@@ -18,22 +18,17 @@ const onlineTas = {};
 const hiddenTas = {};
 let offlineCommands = false;
 
-function readyHelper(message, listAtAuthorId, queueMessage) {
-
-  // console.log("list length: ", list.length);
-  // for(let i = 0; i < list.length; i+=1) {
-  //   console.log(list[i], " with message ", list[i].message);
-  // }
-
-  if (listAtAuthorId.last_ready_msg !== undefined) {
-    listAtAuthorId.last_ready_msg.delete();
-    
+function readyMessageSender(message, list, queueMessage) {
+  if (list.last_ready_msg !== undefined) {
+    list.last_ready_msg.delete();
   }
+
   queueMessage.reply(`${getNickname(message)} is ready for you. Move to their office.`)
     .then((reply) => {
-    listAtAuthorId.last_ready_msg = reply;
+    list.last_ready_msg = reply;
   });
-  listAtAuthorId.last_helped_time = new Date();
+  
+  list.last_helped_time = new Date();
 }
 
 function getNickname(message) {
@@ -56,7 +51,6 @@ function index(member) {
 const isOnline = (member) => member.id in onlineTas;
 const isHidden = (member) => member.id in hiddenTas;
 const contains = (member) => index(member) !== -1;
-
 
 exports.cmds = {
 
@@ -177,7 +171,7 @@ exports.cmds = {
    * Student's can use the !queue command to view how many people are in the queue,
    * and where they are (if they are in the queue).
    *
-   * @param {*} message - The Discord message object to interact with.
+   * @param {Object} message - The Discord message object to interact with.
    */
   '!queue': (message) => {
     if (OFFICE_HOURS === message.channel.id) {
@@ -340,9 +334,9 @@ exports.cmds = {
     const msg = queue[readyIndex].message;
 
     if(isOnline(message.author)) {
-      readyHelper(message, onlineTas[authorId], msg);
+      readyMessageSender(message, onlineTas[authorId], msg);
     } else if (isHidden(message.author)) {
-      readyHelper(message, hiddenTas[authorId], msg);
+      readyMessageSender(message, hiddenTas[authorId], msg);
     } else {
       message.reply("An error occured trying to ready a student due to an invalid online/offline state. Please try again.");
       message.react(NAK);
@@ -391,6 +385,7 @@ exports.cmds = {
    * If they are already offline, warn them.
    *
    * @param {Object} message - The discord messsage object to interact with.
+   * @param {string[]} args - The extent to which a TA wants to go offline.
    */
   '!offline': (message, args) => {
     if (TA_CHANNEL === message.channel.id) {
@@ -442,47 +437,31 @@ exports.cmds = {
    */
   '!off-commands': (message, args) => {
     if (TA_CHANNEL === message.channel.id) {
-
       if(args.length === 0) {
-
         message.react(ACK);
         offlineCommands = !offlineCommands;
 
         if(offlineCommands) {
-
           message.reply('Offline commands are turned `ON`.');
           message.react(ON);
-
         } else {
-
           message.reply('Offline commands are turned `OFF`.');
           message.react(OFF);
-
         }
-
         return;
       }
 
       if(args[0] === "on") {
-
         message.react(ACK);
-
         offlineCommands = true;
-
         message.reply('Offline commands are turned `ON`.');
         message.react(ON);
-
       } else if (args[0] == "off") {
-
         message.react(ACK);
-
         offlineCommands = false;
-
         message.reply('Offline commands are turned `OFF`.');
         message.react(OFF);
-
       } else {
-
         message.react(NAK);
         message.reply('The offline command setting could not be set due to an invalid argument.')
           .then((msg) => {
@@ -490,10 +469,8 @@ exports.cmds = {
               timeout: 5000,
             });
           });
-
       }
 
-      return
     }
   },
 
@@ -508,10 +485,12 @@ exports.cmds = {
         + '!ping - simple test that responds with "pong".\n'
         + "!queue - view the queue w/ username, issue description, and how long they've been waiting.\n"
         + '!undo - quickly undo the ready command that removed them from the queue.\n'
-        + '!remove <index> - removes user from queue at certain index. Does not alert the user.\n'
+        + '!remove [index] - removes user from queue at certain index. Does not alert the user.\n'
         + "!ready [index] - removes user from queue at index (top if index isn't provided). Alerts the user that the TA is ready.\n"
         + '!clear - removes all users from the queue and removes any next messages that were in the chat.\n'
-        + '!off-commands [on, off] - enables/disables certain commands (ready, etc.) while TAs are offline.\n'
+        + '!online - sets your status to online and notifies students in their channel that you are ready to answer questions.\n'
+        + '!offline [partial | full] - sets your status to offline.\n\t With the partial flag, allows you to still ready students and access various commands.\n\t With the full flag, restricts you from being able to access any offline commands.\n'
+        + '!off-commands [on | off] - enables/disables certain commands (ready, etc.) while TAs are offline.\n'
         + '!help - shows these commands.```');
       return;
     }
